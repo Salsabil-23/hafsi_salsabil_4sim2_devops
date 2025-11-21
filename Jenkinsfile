@@ -51,8 +51,8 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 EOF
 
                     echo "🐳 Dockerfile créé. Pour builder manuellement:"
-                    echo "docker build -t sakaoli55/student-management:${BUILD_NUMBER} ."
-                    echo "docker push sakaoli55/student-management:${BUILD_NUMBER}"
+                    echo "docker build -t salsabil55/student-management:${BUILD_NUMBER} ."
+                    echo "docker push salsabil55/student-management:${BUILD_NUMBER}"
                 '''
             }
         }
