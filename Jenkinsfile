@@ -8,7 +8,7 @@ pipeline {
     environment {
         MAVEN_HOME = "${tool 'M2_HOME'}"
         PATH = "${env.MAVEN_HOME}/bin:${env.PATH}"
-        DOCKER_IMAGE = "salsabil55/student-management"
+        DOCKER_IMAGE = "sakaoli55/student-management"
         DOCKER_TAG = "${env.BUILD_NUMBER}"
     }
 
@@ -44,30 +44,25 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Méthode alternative pour trouver le JAR
                     sh '''
-                        echo "🔍 Recherche des fichiers JAR..."
+                        echo "🔍 Vérification des fichiers..."
                         ls -la target/
-                        JAR_FILE=$(ls target/*.jar | head -1)
-                        echo "📦 Fichier JAR trouvé: $JAR_FILE"
 
-                        # Créer le Dockerfile
+                        echo "📄 Création du Dockerfile..."
                         cat > Dockerfile << EOF
 FROM openjdk:17-alpine
-COPY target/*.jar app.jar
+COPY target/student-management-0.0.1-SNAPSHOT.jar app.jar
 EXPOSE 8089
 ENTRYPOINT ["java", "-jar", "app.jar"]
 EOF
 
-                        echo "📄 Contenu du Dockerfile:"
-                        cat Dockerfile
+                        echo "🐳 Construction de l'image Docker..."
+                        # Utilisation de sudo temporairement
+                        sudo docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                        sudo docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
 
-                        # Builder l'image Docker
-                        docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                        docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-
-                        echo "✅ Image Docker buildée avec succès"
-                        docker images | grep student-management
+                        echo "✅ Image construite avec succès"
+                        sudo docker images | grep student-management
                     '''
                 }
             }
@@ -83,28 +78,18 @@ EOF
                     )]) {
                         sh '''
                             echo "🔐 Authentification à DockerHub..."
-                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                            echo $DOCKER_PASSWORD | sudo docker login -u $DOCKER_USERNAME --password-stdin
 
-                            echo "🚀 Pushing image ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                            docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                            echo "🚀 Envoi de l'image ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                            sudo docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
 
-                            echo "🚀 Pushing image ${DOCKER_IMAGE}:latest"
-                            docker push ${DOCKER_IMAGE}:latest
+                            echo "🚀 Envoi de l'image ${DOCKER_IMAGE}:latest"
+                            sudo docker push ${DOCKER_IMAGE}:latest
 
-                            echo "✅ Images poussées avec succès vers DockerHub!"
+                            echo "✅ Images envoyées avec succès vers DockerHub!"
                         '''
                     }
                 }
-            }
-        }
-
-        stage('Cleanup') {
-            steps {
-                sh '''
-                    echo "🧹 Nettoyage..."
-                    docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} || true
-                    docker rmi ${DOCKER_IMAGE}:latest || true
-                '''
             }
         }
     }
@@ -112,7 +97,7 @@ EOF
     post {
         success {
             echo '🎉 Pipeline réussi avec succès!'
-            echo "🐳 Image Docker disponible sur: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}"
+            echo "🐳 Image Docker: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}"
         }
         failure {
             echo '❌ Pipeline a échoué!'
@@ -120,10 +105,7 @@ EOF
         always {
             sh '''
                 echo "🔒 Déconnexion de DockerHub"
-                docker logout || true
-
-                echo "🧹 Nettoyage des fichiers temporaires"
-                rm -f Dockerfile || true
+                sudo docker logout || true
             '''
         }
     }
