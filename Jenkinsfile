@@ -10,6 +10,7 @@ pipeline {
         PATH = "${env.MAVEN_HOME}/bin:${env.PATH}"
         DOCKER_IMAGE = "salsabil55/student-management"
         DOCKER_TAG = "${env.BUILD_NUMBER}"
+        SONAR_HOST_URL = "http://localhost:9000"
     }
 
     stages {
@@ -26,6 +27,30 @@ pipeline {
             post {
                 always {
                     junit 'target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        stage('Code Coverage') {
+            steps {
+                sh 'mvn jacoco:prepare-agent test jacoco:report'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonarqube') {
+                    sh 'mvn sonar:sonar \
+                        -Dsonar.projectKey=student-management \
+                        -Dsonar.projectName=student-management'
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
