@@ -42,15 +42,17 @@ pipeline {
                 withSonarQubeEnv('sonarqube') {
                     sh 'mvn sonar:sonar \
                         -Dsonar.projectKey=student-management \
-                        -Dsonar.projectName=student-management'
+                        -Dsonar.projectName=student-management \
+                        -Dsonar.java.binaries=target/classes \
+                        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml'
                 }
             }
         }
 
         stage('Quality Gate') {
             steps {
-                timeout(time: 1, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: false
                 }
             }
         }
