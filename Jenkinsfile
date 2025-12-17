@@ -6,6 +6,18 @@ pipeline {
         DOCKER_HOST = 'unix:///var/run/docker.sock'
     }
 
+    tools {
+        maven 'M2_HOME'
+    }
+
+    environment {
+        DOCKER_IMAGE = 'salsabil55/student-management'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        K8S_NAMESPACE = 'devops'
+        SONARQUBE_URL = 'http://localhost:9000'
+        SPRING_BOOT_URL = 'http://localhost:30080/student'
+    }
+
     stages {
         // NOUVELLE ÉTAPE : Préparation Kubernetes
         stage('Prepare Kubernetes Access') {
@@ -44,28 +56,6 @@ pipeline {
                     '''
                     echo '✅ Workspace nettoyé'
                 }
-            }
-        }
-
-        // Les autres étapes existantes suivent...
-        // [VOTRE CODE EXISTANT ICI - à copier depuis le backup]
-    tools {
-        maven 'M2_HOME'
-    }
-
-    environment {
-        DOCKER_IMAGE = 'salsabil55/student-management'
-        DOCKER_TAG = "${env.BUILD_NUMBER}"
-        K8S_NAMESPACE = 'devops'
-        SONARQUBE_URL = 'http://localhost:9000'
-        SPRING_BOOT_URL = 'http://localhost:30080/student'
-    }
-
-    stages {
-        stage('Clean Workspace') {
-            steps {
-                cleanWs()
-                echo "✅ Workspace nettoyé pour le build #${env.BUILD_NUMBER}"
             }
         }
 
