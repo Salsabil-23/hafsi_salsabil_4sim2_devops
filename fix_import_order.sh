@@ -1,3 +1,14 @@
+#!/bin/bash
+
+FILE="./src/main/java/tn/esprit/studentmanagement/entities/Department.java"
+
+echo "Réparation de l'ordre des imports dans $FILE"
+
+# Créer une sauvegarde
+cp "$FILE" "${FILE}.backup2"
+
+# Réorganiser correctement
+cat > "$FILE" << 'FILE_CONTENT'
 package tn.esprit.studentmanagement.entities;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -40,3 +51,9 @@ public class Department {
     public List<Student> getStudents() { return students; }
     public void setStudents(List<Student> students) { this.students = students; }
 }
+FILE_CONTENT
+
+echo "✅ Fichier réparé avec l'ordre correct des imports"
+echo ""
+echo "Nouveau contenu:"
+head -15 "$FILE"
