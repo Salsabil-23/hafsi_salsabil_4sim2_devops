@@ -208,9 +208,7 @@ pipeline {
 
                         # Vérifier avec timeout correct
                         echo "Pods Spring Boot:"
-                        timeout(time: 30, unit: 'SECONDS') {
-                            kubectl get pods -l app=spring-boot-app -n ${env.K8S_NAMESPACE} -w
-                        } || echo "✅ Vérification terminée"
+                        kubectl get pods -l app=spring-boot-app -n ${env.K8S_NAMESPACE} -w --timeout=30s 2>/dev/null || echo "✅ Vérification terminée"
 
                         echo "✅ Spring Boot déployé"
                     """
@@ -250,7 +248,7 @@ pipeline {
                         echo ""
                         echo "4. Vérification application:"
                         # Tester l'endpoint health via port-forward temporaire
-                        kubectl port-forward svc/spring-service 8080:80 -n ${K8S_NAMESPACE} &
+                        kubectl port-forward svc/spring-service 8080:80 -n ${K8S_NAMESPACE} --address=0.0.0.0 &
                         PF_PID=$!
                         sleep 5
                         curl -s http://localhost:8080/student/actuator/health || echo "⚠ Health endpoint non accessible"
@@ -391,7 +389,8 @@ pipeline {
                     kubectl get pods -n ${K8S_NAMESPACE} --field-selector=status.phase!=Running 2>/dev/null || echo "K8S non accessible"
 
                     echo "2. Derniers logs:"
-                    find . -name "*.log" -exec tail -20 {} \; 2>/dev/null | head -100 || echo "Aucun log trouvé"
+                    # Commande simplifiée pour éviter les problèmes d'échappement
+                    ls -la *.log 2>/dev/null || echo "Aucun fichier .log trouvé"
 
                     echo "3. Fichiers workspace:"
                     ls -la 2>/dev/null || echo "Workspace vide"
