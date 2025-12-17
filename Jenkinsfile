@@ -71,28 +71,31 @@ pipeline {
 
         stage('Code Quality - SonarQube') {
             steps {
-                withSonarQubeEnv('sonarqube') {
-                    sh '''
-                        echo "=== Analyse SonarQube ==="
+                withCredentials([string(credentialsId: 'sonarqube-token1', variable: 'SONAR_TOKEN')]) {
+                    script {
+                        sh '''
+                            echo "=== Analyse SonarQube ==="
 
-                        # Vérifier existence rapport JaCoCo
-                        if [ -f "target/site/jacoco/jacoco.xml" ]; then
-                            echo "📊 Rapport JaCoCo trouvé"
-                            echo "Taille: $(du -h target/site/jacoco/jacoco.xml | cut -f1)"
-                        else
-                            echo "⚠ Rapport JaCoCo non trouvé, génération..."
-                            mvn jacoco:report
-                        fi
+                            # Vérifier existence rapport JaCoCo
+                            if [ -f "target/site/jacoco/jacoco.xml" ]; then
+                                echo "📊 Rapport JaCoCo trouvé"
+                                echo "Taille: $(du -h target/site/jacoco/jacoco.xml | cut -f1)"
+                            else
+                                echo "⚠ Rapport JaCoCo non trouvé, génération..."
+                                mvn jacoco:report
+                            fi
 
-                        # Exécuter analyse SonarQube
-                        mvn sonar:sonar \
-                            -Dsonar.projectKey=student-management \
-                            -Dsonar.host.url=${SONARQUBE_URL} \
-                            -Dsonar.login=${SONARQUBE_TOKEN} \
-                            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+                            # Exécuter analyse SonarQube avec token
+                            echo "Utilisation token SonarQube..."
+                            mvn sonar:sonar \
+                                -Dsonar.projectKey=student-management \
+                                -Dsonar.host.url=http://localhost:9000 \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
-                        echo "✅ Analyse SonarQube complétée"
-                    '''
+                            echo "✅ Analyse SonarQube complétée"
+                        '''
+                    }
                 }
             }
         }
