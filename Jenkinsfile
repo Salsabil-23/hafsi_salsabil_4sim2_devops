@@ -1,11 +1,6 @@
 pipeline {
     agent any
     
-    environment {
-        KUBECONFIG = '/var/lib/jenkins/.kube/config'
-        DOCKER_HOST = 'unix:///var/run/docker.sock'
-    }
-
     tools {
         maven 'M2_HOME'
     }
@@ -15,47 +10,14 @@ pipeline {
         DOCKER_TAG = "${env.BUILD_NUMBER}"
         K8S_NAMESPACE = 'devops'
         SONARQUBE_URL = 'http://localhost:9000'
-        SPRING_BOOT_URL = 'http://localhost:30080/student'
+        SPRING_BOOT_URL = 'http://localhost:30080'
     }
 
     stages {
-        // NOUVELLE ÉTAPE : Préparation Kubernetes
-        stage('Prepare Kubernetes Access') {
-            steps {
-                script {
-                    echo '=== Préparation accès Kubernetes ==='
-                    sh '''
-                        # Vérifier si Minikube est démarré
-                        if ! minikube status 2>/dev/null | grep -q "Running"; then
-                            echo "Minikube n\'est pas démarré, tentative de démarrage..."
-                            minikube start || echo "Impossible de démarrer Minikube"
-                            sleep 30
-                        fi
-
-                        # Mettre à jour la configuration
-                        minikube update-context 2>/dev/null || true
-
-                        # Vérifier l'accès
-                        kubectl get nodes && echo "✅ Kubernetes accessible" || {
-                            echo "⚠️  Utilisation de la configuration utilisateur"
-                            export KUBECONFIG=/root/.kube/config
-                            kubectl get nodes || echo "❌ Impossible d'accéder à Kubernetes"
-                        }
-                    '''
-                }
-            }
-        }
-
-        // ÉTAPE EXISTANTE : Clean Workspace (modifiée)
         stage('Clean Workspace') {
             steps {
-                script {
-                    sh '''
-                        rm -rf *
-                        git clean -fdx
-                    '''
-                    echo '✅ Workspace nettoyé'
-                }
+                cleanWs()
+                echo "✅ Workspace nettoyé pour le build #${env.BUILD_NUMBER}"
             }
         }
 
@@ -109,31 +71,28 @@ pipeline {
 
         stage('Code Quality - SonarQube') {
             steps {
-                withCredentials([string(credentialsId: 'jenkins', variable: 'SONAR_TOKEN')]) {
-                    script {
-                        sh '''
-                            echo "=== Analyse SonarQube ==="
+                withSonarQubeEnv('sonarqube') {
+                    sh '''
+                        echo "=== Analyse SonarQube ==="
 
-                            # Vérifier existence rapport JaCoCo
-                            if [ -f "target/site/jacoco/jacoco.xml" ]; then
-                                echo "📊 Rapport JaCoCo trouvé"
-                                echo "Taille: $(du -h target/site/jacoco/jacoco.xml | cut -f1)"
-                            else
-                                echo "⚠ Rapport JaCoCo non trouvé, génération..."
-                                mvn jacoco:report
-                            fi
+                        # Vérifier existence rapport JaCoCo
+                        if [ -f "target/site/jacoco/jacoco.xml" ]; then
+                            echo "📊 Rapport JaCoCo trouvé"
+                            echo "Taille: $(du -h target/site/jacoco/jacoco.xml | cut -f1)"
+                        else
+                            echo "⚠ Rapport JaCoCo non trouvé, génération..."
+                            mvn jacoco:report
+                        fi
 
-                            # Exécuter analyse SonarQube avec token
-                            echo "Utilisation token SonarQube..."
-                            mvn sonar:sonar \
-                                -Dsonar.projectKey=student-management \
-                                -Dsonar.host.url=http://localhost:9000 \
-                                -Dsonar.login=${SONAR_TOKEN} \
-                                -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+                        # Exécuter analyse SonarQube
+                        mvn sonar:sonar \
+                            -Dsonar.projectKey=student-management \
+                            -Dsonar.host.url=${SONARQUBE_URL} \
+                            -Dsonar.login=${SONARQUBE_TOKEN} \
+                            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
-                            echo "✅ Analyse SonarQube complétée"
-                        '''
-                    }
+                        echo "✅ Analyse SonarQube complétée"
+                    '''
                 }
             }
         }
@@ -168,7 +127,7 @@ pipeline {
                     echo "  - ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}"
                     echo "  - ${env.DOCKER_IMAGE}:latest"
 
-                    docker images | grep ${env.DOCKER_IMAGE} || echo "⚠ Aucune image trouvée pour ${env.DOCKER_IMAGE}"
+                    docker images | grep ${env.DOCKER_IMAGE}
                 """
             }
         }
@@ -185,8 +144,8 @@ pipeline {
 
                         echo \$DOCKER_PASSWORD | docker login -u \$DOCKER_USERNAME --password-stdin
 
-                        docker push ${env.DOCKER_IMAGE}:${env.DOCKER_TAG} || echo "⚠ Échec push de ${env.DOCKER_TAG}"
-                        docker push ${env.DOCKER_IMAGE}:latest || echo "⚠ Échec push de latest"
+                        docker push ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}
+                        docker push ${env.DOCKER_IMAGE}:latest
 
                         echo "✅ Images poussées sur Docker Hub"
                     """
@@ -201,15 +160,8 @@ pipeline {
                         echo "=== Déploiement MySQL ==="
                         export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                        # Vérifier si MySQL est déjà déployé
-                        MYSQL_EXISTS=$(kubectl get deployment mysql -n ${K8S_NAMESPACE} --ignore-not-found)
-                        if [ -z "$MYSQL_EXISTS" ]; then
-                            # Déployer MySQL
-                            kubectl apply -f mysql-deployment.yaml -n ${K8S_NAMESPACE}
-                            echo "✅ MySQL déployé"
-                        else
-                            echo "ℹ️ MySQL est déjà déployé"
-                        fi
+                        # Déployer MySQL
+                        kubectl apply -f mysql-deployment.yaml -n ${K8S_NAMESPACE}
 
                         # Attendre démarrage
                         echo "Attente démarrage MySQL..."
@@ -217,6 +169,7 @@ pipeline {
 
                         # Vérifier
                         kubectl get pods -l app=mysql -n ${K8S_NAMESPACE}
+                        echo "✅ MySQL déployé"
                     '''
                 }
             }
@@ -229,24 +182,18 @@ pipeline {
                         echo "=== Déploiement Spring Boot ==="
                         export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                        # Sauvegarder le fichier original
-                        cp spring-deployment.yaml spring-deployment.yaml.backup
-
                         # Mettre à jour l'image dans le YAML
                         sed -i 's|image:.*salsabil55/student-management.*|image: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}|g' spring-deployment.yaml
 
                         # Déployer
                         kubectl apply -f spring-deployment.yaml -n ${env.K8S_NAMESPACE}
 
-                        # Restaurer le fichier original
-                        mv spring-deployment.yaml.backup spring-deployment.yaml
-
                         echo "Attente démarrage Spring Boot..."
-                        sleep 25
+                        sleep 20
 
-                        # Vérifier avec timeout correct
+                        # Vérifier
                         echo "Pods Spring Boot:"
-                        kubectl get pods -l app=spring-boot-app -n ${env.K8S_NAMESPACE} -w --timeout=30s 2>/dev/null || echo "✅ Vérification terminée"
+                        kubectl get pods -l app=spring-boot-app -n ${env.K8S_NAMESPACE} --watch --timeout=30s || true
 
                         echo "✅ Spring Boot déployé"
                     """
@@ -262,7 +209,7 @@ pipeline {
                         export KUBECONFIG=/var/lib/jenkins/.kube/config
 
                         echo "1. État des pods:"
-                        kubectl get pods -n ${K8S_NAMESPACE} -o wide
+                        kubectl get pods -n ${K8S_NAMESPACE}
 
                         echo ""
                         echo "2. Services:"
@@ -270,27 +217,12 @@ pipeline {
 
                         echo ""
                         echo "3. Vérification Spring Boot:"
-                        SPRING_POD=$(kubectl get pods -l app=spring-boot-app -n ${K8S_NAMESPACE} -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
+                        SPRING_POD=$(kubectl get pods -l app=spring-boot-app -n ${K8S_NAMESPACE} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
                         if [ -n "$SPRING_POD" ]; then
                             echo "Pod Spring Boot: $SPRING_POD"
-                            echo "• Statut:"
-                            kubectl get pod $SPRING_POD -n ${K8S_NAMESPACE} -o jsonpath="{.status.phase}"
-                            echo ""
-                            echo "• Logs (dernières lignes):"
                             kubectl logs $SPRING_POD -n ${K8S_NAMESPACE} --tail=5 2>/dev/null || echo "Logs non disponibles"
-                        else
-                            echo "⚠ Aucun pod Spring Boot trouvé"
                         fi
-
-                        echo ""
-                        echo "4. Vérification application:"
-                        # Tester l'endpoint health via port-forward temporaire
-                        kubectl port-forward svc/spring-service 8080:80 -n ${K8S_NAMESPACE} --address=0.0.0.0 &
-                        PF_PID=$!
-                        sleep 5
-                        curl -s http://localhost:8080/student/actuator/health || echo "⚠ Health endpoint non accessible"
-                        kill $PF_PID 2>/dev/null || true
 
                         echo "✅ Santé vérifiée"
                     '''
@@ -301,13 +233,13 @@ pipeline {
         stage('Generate Report') {
             steps {
                 script {
-                    sh """
-                        echo "=== 🏆 RAPPORT FINAL DU BUILD #${env.BUILD_NUMBER} ==="
+                    sh '''
+                        echo "=== 🏆 RAPPORT FINAL DU BUILD #${BUILD_NUMBER} ==="
                         echo ""
-                        echo "📅 Date: \$(date)"
-                        echo "🔢 Build Number: ${env.BUILD_NUMBER}"
-                        echo "🏷️  Image Docker: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}"
-                        echo "📦 Namespace K8S: ${env.K8S_NAMESPACE}"
+                        echo "📅 Date: $(date)"
+                        echo "🔢 Build Number: ${BUILD_NUMBER}"
+                        echo "🏷️  Image Docker: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                        echo "📦 Namespace K8S: ${K8S_NAMESPACE}"
                         echo ""
                         echo "✅ ÉTAPES RÉUSSIES:"
                         echo "1. ✅ Checkout code GitHub"
@@ -321,17 +253,17 @@ pipeline {
                         echo "9. ✅ Health checks"
                         echo ""
                         echo "🔗 ACCÈS:"
-                        echo "• SonarQube: ${env.SONARQUBE_URL}/dashboard?id=student-management"
-                        echo "• Application: ${env.SPRING_BOOT_URL}"
-                        echo "• Docker Hub: https://hub.docker.com/r/${env.DOCKER_IMAGE}"
+                        echo "• SonarQube: ${SONARQUBE_URL}/dashboard?id=student-management"
+                        echo "• Application: ${SPRING_BOOT_URL}/student"
+                        echo "• Docker Hub: https://hub.docker.com/r/${DOCKER_IMAGE}"
                         echo ""
                         echo "📊 ARTÉFACTS:"
                         echo "• JAR: target/student-management-*.jar"
-                        echo "• Image: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}"
+                        echo "• Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
                         echo "• Rapports: reports/jacoco/"
                         echo ""
                         echo "🌟 BUILD RÉUSSI ! 🎉"
-                    """
+                    '''
 
                     // Sauvegarder le rapport
                     writeFile file: "build-report-${env.BUILD_NUMBER}.txt", text: """
@@ -345,17 +277,12 @@ pipeline {
 
                     URLs:
                     - SonarQube: ${env.SONARQUBE_URL}
-                    - Application: ${env.SPRING_BOOT_URL}
+                    - Application: ${env.SPRING_BOOT_URL}/student
 
                     Artifacts:
                     - Application JAR: target/student-management-*.jar
                     - Docker Image: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}
                     - Test Reports: reports/jacoco/
-
-                    Environment:
-                    - Jenkins: ${env.JENKINS_URL}
-                    - Node: ${env.NODE_NAME}
-                    - Workspace: ${env.WORKSPACE}
                     """
                 }
             }
@@ -375,41 +302,31 @@ pipeline {
             sh '''
                 echo "Nettoyage des fichiers temporaires..."
                 docker system prune -f 2>/dev/null || true
-
-                # Nettoyer les fichiers temporaires
-                rm -f spring-deployment.yaml.backup 2>/dev/null || true
             '''
         }
 
         success {
             echo "🎉🎉🎉 BUILD #${env.BUILD_NUMBER} RÉUSSI ! 🎉🎉🎉"
-            script {
-                try {
-                    emailext (
-                        subject: "✅ SUCCESS: Build #${env.BUILD_NUMBER} - Student Management",
-                        body: """
-                        Le build Jenkins #${env.BUILD_NUMBER} a réussi !
+            emailext (
+                subject: "✅ SUCCESS: Build #${env.BUILD_NUMBER} - Student Management",
+                body: """
+                Le build Jenkins #${env.BUILD_NUMBER} a réussi !
 
-                        Détails:
-                        - Application: Student Management
-                        - Image Docker: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}
-                        - Tests: 32 tests passés
-                        - SonarQube: Analyse complétée
-                        - K8S: Déployé sur namespace ${env.K8S_NAMESPACE}
+                Détails:
+                - Application: Student Management
+                - Image Docker: ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}
+                - Tests: 32 tests passés
+                - SonarQube: Analyse complétée
+                - K8S: Déployé sur namespace ${env.K8S_NAMESPACE}
 
-                        Accès:
-                        - SonarQube: ${env.SONARQUBE_URL}
-                        - Application: ${env.SPRING_BOOT_URL}
+                Accès:
+                - SonarQube: ${env.SONARQUBE_URL}
+                - Application: ${env.SPRING_BOOT_URL}/student
 
-                        Consultez Jenkins pour plus de détails.
-                        """,
-                        to: 'your-email@example.com',
-                        replyTo: 'jenkins@example.com'
-                    )
-                } catch (Exception e) {
-                    echo "⚠ Échec envoi email: ${e.message}"
-                }
-            }
+                Consultez Jenkins pour plus de détails.
+                """,
+                to: 'your-email@example.com'
+            )
         }
 
         failure {
@@ -426,9 +343,8 @@ pipeline {
                     echo "1. Pods en erreur:"
                     kubectl get pods -n ${K8S_NAMESPACE} --field-selector=status.phase!=Running 2>/dev/null || echo "K8S non accessible"
 
-                    echo "2. Derniers logs:"
-                    # Commande simplifiée pour éviter les problèmes d'échappement
-                    ls -la *.log 2>/dev/null || echo "Aucun fichier .log trouvé"
+                    echo "2. Logs Maven:"
+                    tail -50 /tmp/mvn.log 2>/dev/null || echo "Logs Maven non disponibles"
 
                     echo "3. Fichiers workspace:"
                     ls -la 2>/dev/null || echo "Workspace vide"
