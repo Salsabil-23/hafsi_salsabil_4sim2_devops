@@ -5,7 +5,7 @@ pipeline {
         KUBECONFIG = '/var/lib/jenkins/.kube/config'
         DOCKER_HOST = 'unix:///var/run/docker.sock'
     }
-    
+
     stages {
         // NOUVELLE ÉTAPE : Préparation Kubernetes
         stage('Prepare Kubernetes Access') {
@@ -19,10 +19,10 @@ pipeline {
                             minikube start || echo "Impossible de démarrer Minikube"
                             sleep 30
                         fi
-                        
+
                         # Mettre à jour la configuration
                         minikube update-context 2>/dev/null || true
-                        
+
                         # Vérifier l'accès
                         kubectl get nodes && echo "✅ Kubernetes accessible" || {
                             echo "⚠️  Utilisation de la configuration utilisateur"
@@ -33,7 +33,7 @@ pipeline {
                 }
             }
         }
-        
+
         // ÉTAPE EXISTANTE : Clean Workspace (modifiée)
         stage('Clean Workspace') {
             steps {
@@ -46,13 +46,13 @@ pipeline {
                 }
             }
         }
-        
+
         // Les autres étapes existantes suivent...
         // [VOTRE CODE EXISTANT ICI - à copier depuis le backup]
     tools {
         maven 'M2_HOME'
     }
-    
+
     environment {
         DOCKER_IMAGE = 'salsabil55/student-management'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
@@ -451,4 +451,5 @@ pipeline {
             echo "Certains tests ou checks ont échoué"
         }
     }
+}
 }
